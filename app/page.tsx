@@ -3,7 +3,7 @@
 import { useAuth } from "@/context/auth-context"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { FileText, Scale, Users, Shield } from "lucide-react"
+import { FileText, Scale, Users, Shield, FolderOpen } from "lucide-react"
 import Link from "next/link"
 
 export default function HomePage() {
@@ -71,6 +71,22 @@ export default function HomePage() {
                 </Button>
               </CardContent>
             </Card>
+
+            {user?.role !== "super_admin" && (
+              <Card className="hover:shadow-md transition-shadow border-border">
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">Mis Documentos</CardTitle>
+                  <FolderOpen className="h-5 w-5 text-accent" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-primary">PDFs</div>
+                  <p className="text-xs text-muted-foreground mt-1">Documentos asignados</p>
+                  <Button asChild variant="link" className="px-0 mt-2 text-accent">
+                    <Link href="/mis-documentos">Ver documentos</Link>
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
 
             {user?.role === "super_admin" && (
               <>

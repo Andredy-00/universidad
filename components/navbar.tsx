@@ -12,7 +12,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { Settings, LogOut, FileText, Scale, Users, UserPlus, LayoutGrid } from "lucide-react"
+import { Settings, LogOut, FileText, Scale, Users, UserPlus, LayoutGrid, FolderOpen } from "lucide-react"
 
 export function Navbar() {
   const { user, isAuthenticated, isLoading, logout } = useAuth()
@@ -68,6 +68,17 @@ export function Navbar() {
                       Historial jurídico
                     </Link>
                   </DropdownMenuItem>
+                  {user?.role !== "super_admin" && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem asChild>
+                        <Link href="/mis-documentos" className="flex items-center gap-2 cursor-pointer">
+                          <FolderOpen className="h-4 w-4" />
+                          Mis Documentos
+                        </Link>
+                      </DropdownMenuItem>
+                    </>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
 

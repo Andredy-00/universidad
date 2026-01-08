@@ -1,65 +1,47 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
-import { Users, Search, UserPlus, FileText } from "lucide-react"
-
-interface Cliente {
-  id: string
-  nombre: string
-  correo: string
-  celular: string
-  usuario: string
-}
-
-// Mock data for demonstration
-const mockClientes: Cliente[] = [
-  {
-    id: "1",
-    nombre: "Juan Carlos Pérez",
-    correo: "juan.perez@email.com",
-    celular: "+57 300 111 2222",
-    usuario: "juan.perez",
-  },
-  {
-    id: "2",
-    nombre: "María Fernanda López",
-    correo: "maria.lopez@email.com",
-    celular: "+57 301 222 3333",
-    usuario: "maria.lopez",
-  },
-  {
-    id: "3",
-    nombre: "Carlos Andrés García",
-    correo: "carlos.garcia@email.com",
-    celular: "+57 302 333 4444",
-    usuario: "carlos.garcia",
-  },
-  {
-    id: "4",
-    nombre: "Ana María Rodríguez",
-    correo: "ana.rodriguez@email.com",
-    celular: "+57 303 444 5555",
-    usuario: "ana.rodriguez",
-  },
-  {
-    id: "5",
-    nombre: "Pedro Luis Martínez",
-    correo: "pedro.martinez@email.com",
-    celular: "+57 304 555 6666",
-    usuario: "pedro.martinez",
-  },
-]
+import { Users, Search, UserPlus, FileText, Loader2 } from "lucide-react"
+import type { Cliente } from "@/lib/db/schema"
 
 export function ClientesList() {
   const [searchTerm, setSearchTerm] = useState("")
+  const [clientes, setClientes] = useState<Cliente[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  const filteredClientes = mockClientes.filter((cliente) =>
-    cliente.nombre.toLowerCase().includes(searchTerm.toLowerCase()),
-  )
+  useEffect(() => {
+    async function fetchClientes() {
+      try {
+        const response = await fetch("/api/clientes")
+        if (!response.ok) {
+          throw new Error("Error al cargar clientes")
+        }
+        const data = await response.json()
+        setClientes(data)
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Error desconocido")
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    fetchClientes()
+  }, [])
+
+  const filteredClientes = clientes.filter((cliente) => cliente.nombre.toLowerCase().includes(searchTerm.toLowerCase()))
+
+  if (isLoading) {
+    return (
+      <div className="container mx-auto px-4 py-8 flex items-center justify-center min-h-[400px]">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    )
+  }
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -93,10 +75,12 @@ export function ClientesList() {
         </div>
       </div>
 
+      {error && <div className="text-center py-8 text-destructive">{error}</div>}
+
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {filteredClientes.length === 0 ? (
+        {filteredClientes.length === 0 && !error ? (
           <div className="col-span-full text-center py-12 text-muted-foreground">
-            No se encontraron clientes con ese nombre
+            {searchTerm ? "No se encontraron clientes con ese nombre" : "No hay clientes registrados"}
           </div>
         ) : (
           filteredClientes.map((cliente) => (
@@ -116,9 +100,9 @@ export function ClientesList() {
                     variant="outline"
                     className="w-full border-accent text-accent hover:bg-accent hover:text-accent-foreground bg-transparent"
                   >
-                    <Link href={`/clientes/${cliente.id}/procesos`}>
+                    <Link href={`/clientes/${cliente.id}/documentos`}>
                       <FileText className="h-4 w-4 mr-2" />
-                      Procesos
+                      Documentos
                     </Link>
                   </Button>
                 </div>
