@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
+import { getAdminClient } from "@/lib/supabase/admin"
 import { getDb, schema } from "@/lib/db"
 import { eq } from "drizzle-orm"
 import { encryptPassword, generatePassword } from "@/lib/crypto"
@@ -22,7 +23,6 @@ export async function GET() {
     const db = getDb()
 
     if (profile?.role === "super_admin") {
-      // Admin ve todos los clientes (sin contraseña)
       const clientes = await db
         .select({
           id: schema.clientes.id,
@@ -34,11 +34,11 @@ export async function GET() {
           usuario: schema.clientes.usuario,
           authUserId: schema.clientes.authUserId,
           activo: schema.clientes.activo,
+          creadoPor: schema.clientes.creadoPor,
         })
         .from(schema.clientes)
       return NextResponse.json(clientes)
-    } else {
-      // Usuario normal solo ve su cliente
+    } else if (profile?.role === "admin") {
       const clientes = await db
         .select({
           id: schema.clientes.id,
@@ -50,6 +50,24 @@ export async function GET() {
           usuario: schema.clientes.usuario,
           authUserId: schema.clientes.authUserId,
           activo: schema.clientes.activo,
+          creadoPor: schema.clientes.creadoPor,
+        })
+        .from(schema.clientes)
+        .where(eq(schema.clientes.creadoPor, user.id))
+      return NextResponse.json(clientes)
+    } else {
+      const clientes = await db
+        .select({
+          id: schema.clientes.id,
+          createdAt: schema.clientes.createdAt,
+          updatedAt: schema.clientes.updatedAt,
+          nombre: schema.clientes.nombre,
+          correo: schema.clientes.correo,
+          celular: schema.clientes.celular,
+          usuario: schema.clientes.usuario,
+          authUserId: schema.clientes.authUserId,
+          activo: schema.clientes.activo,
+          creadoPor: schema.clientes.creadoPor,
         })
         .from(schema.clientes)
         .where(eq(schema.clientes.authUserId, user.id))
@@ -61,7 +79,7 @@ export async function GET() {
   }
 }
 
-// POST - Crear nuevo cliente con cuenta de usuario (solo admin)
+// POST - Crear nuevo cliente con cuenta de usuario
 export async function POST(request: Request) {
   try {
     const supabase = await createClient()
@@ -73,10 +91,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 })
     }
 
-    // Verificar rol del usuario
+    // Verificar rol del usuario (admin o super_admin pueden crear clientes)
     const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single()
 
-    if (profile?.role !== "super_admin") {
+    if (profile?.role !== "super_admin" && profile?.role !== "admin") {
       return NextResponse.json({ error: "No tienes permisos" }, { status: 403 })
     }
 
@@ -90,11 +108,11 @@ export async function POST(request: Request) {
     const password = customPassword || generatePassword(10)
     const passwordEncrypted = encryptPassword(password)
 
-    // Crear usuario en Supabase Auth usando service role
-    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+    const adminClient = getAdminClient()
+    const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
       email: correo,
       password: password,
-      email_confirm: true, // Auto-confirmar email
+      email_confirm: true,
       user_metadata: {
         display_name: nombre,
         role: "user",
@@ -109,6 +127,15 @@ export async function POST(request: Request) {
       )
     }
 
+    // Crear perfil para el usuario
+    await adminClient.from("profiles").upsert({
+      id: authData.user?.id,
+      email: correo,
+      display_name: nombre,
+      role: "user",
+      creado_por: user.id,
+    })
+
     const db = getDb()
     const [newCliente] = await db
       .insert(schema.clientes)
@@ -119,10 +146,10 @@ export async function POST(request: Request) {
         usuario,
         passwordEncrypted,
         authUserId: authData.user?.id,
+        creadoPor: user.id,
       })
       .returning()
 
-    // Retornar cliente con contraseña solo en la creación
     return NextResponse.json(
       {
         ...newCliente,

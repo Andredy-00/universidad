@@ -12,7 +12,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { Settings, LogOut, FileText, Scale, Users, UserPlus, LayoutGrid, FolderOpen } from "lucide-react"
+import { Settings, LogOut, FileText, Scale, Users, UserPlus, LayoutGrid, FolderOpen, ShieldCheck } from "lucide-react"
 
 export function Navbar() {
   const { user, isAuthenticated, isLoading, logout } = useAuth()
@@ -31,6 +31,17 @@ export function Navbar() {
     await logout()
     router.push("/login")
     router.refresh()
+  }
+
+  const getRoleLabel = (role: string | null) => {
+    switch (role) {
+      case "super_admin":
+        return "Super Admin"
+      case "admin":
+        return "Admin"
+      default:
+        return "Usuario"
+    }
   }
 
   return (
@@ -56,20 +67,31 @@ export function Navbar() {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-48">
-                  <DropdownMenuItem asChild>
-                    <Link href="/transacciones" className="flex items-center gap-2 cursor-pointer">
-                      <FileText className="h-4 w-4" />
-                      Transacciones
-                    </Link>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem asChild>
-                    <Link href="/historial-juridico" className="flex items-center gap-2 cursor-pointer">
-                      <Scale className="h-4 w-4" />
-                      Historial jurídico
-                    </Link>
-                  </DropdownMenuItem>
-                  {user?.role !== "super_admin" && (
+                  {(user?.role === "super_admin" || user?.role === "admin") && (
                     <>
+                      <DropdownMenuItem asChild>
+                        <Link href="/transacciones" className="flex items-center gap-2 cursor-pointer">
+                          <FileText className="h-4 w-4" />
+                          Transacciones
+                        </Link>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem asChild>
+                        <Link href="/historial-juridico" className="flex items-center gap-2 cursor-pointer">
+                          <Scale className="h-4 w-4" />
+                          Historial jurídico
+                        </Link>
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                  {/* Usuario normal (cliente) ve sus documentos */}
+                  {user?.role === "user" && (
+                    <>
+                      <DropdownMenuItem asChild>
+                        <Link href="/historial-juridico" className="flex items-center gap-2 cursor-pointer">
+                          <Scale className="h-4 w-4" />
+                          Historial jurídico
+                        </Link>
+                      </DropdownMenuItem>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem asChild>
                         <Link href="/mis-documentos" className="flex items-center gap-2 cursor-pointer">
@@ -97,12 +119,31 @@ export function Navbar() {
                     <p className="text-sm font-medium">{user?.name}</p>
                     <p className="text-xs text-muted-foreground">{user?.email}</p>
                     <span className="inline-block mt-1 text-xs px-2 py-0.5 rounded bg-primary/10 text-primary">
-                      {user?.role === "super_admin" ? "Super Admin" : "Usuario"}
+                      {getRoleLabel(user?.role || null)}
                     </span>
                   </div>
                   <DropdownMenuSeparator />
 
                   {user?.role === "super_admin" && (
+                    <>
+                      <DropdownMenuItem asChild>
+                        <Link href="/admins/crear" className="flex items-center gap-2 cursor-pointer">
+                          <ShieldCheck className="h-4 w-4" />
+                          Crear admin
+                        </Link>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem asChild>
+                        <Link href="/admins" className="flex items-center gap-2 cursor-pointer">
+                          <ShieldCheck className="h-4 w-4" />
+                          Administradores
+                        </Link>
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                    </>
+                  )}
+
+                  {/* Opciones para super_admin y admin */}
+                  {(user?.role === "super_admin" || user?.role === "admin") && (
                     <>
                       <DropdownMenuItem asChild>
                         <Link href="/clientes/crear" className="flex items-center gap-2 cursor-pointer">

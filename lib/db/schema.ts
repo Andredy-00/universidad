@@ -8,6 +8,20 @@ export const profiles = pgTable("profiles", {
   email: text("email"),
   displayName: text("display_name"),
   role: text("role").default("user"),
+  creadoPor: uuid("creado_por"),
+})
+
+export const admins = pgTable("admins", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  nombre: text("nombre").notNull(),
+  correo: text("correo").notNull().unique(),
+  usuario: text("usuario").notNull().unique(),
+  passwordEncrypted: text("password_encrypted"),
+  authUserId: uuid("auth_user_id").references(() => profiles.id),
+  activo: boolean("activo").default(true),
+  creadoPor: uuid("creado_por").references(() => profiles.id),
 })
 
 // Tabla de clientes
@@ -20,9 +34,9 @@ export const clientes = pgTable("clientes", {
   celular: text("celular"),
   usuario: text("usuario").notNull().unique(),
   passwordEncrypted: text("password_encrypted"),
-  // Referencia al usuario de Supabase Auth si tiene cuenta
   authUserId: uuid("auth_user_id").references(() => profiles.id),
   activo: boolean("activo").default(true),
+  creadoPor: uuid("creado_por").references(() => profiles.id),
 })
 
 // Tabla de documentos/PDFs
@@ -62,6 +76,9 @@ export const procesosJuridicos = pgTable("procesos_juridicos", {
 // Tipos inferidos
 export type Profile = typeof profiles.$inferSelect
 export type NewProfile = typeof profiles.$inferInsert
+
+export type Admin = typeof admins.$inferSelect
+export type NewAdmin = typeof admins.$inferInsert
 
 export type Cliente = typeof clientes.$inferSelect
 export type NewCliente = typeof clientes.$inferInsert

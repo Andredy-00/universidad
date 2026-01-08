@@ -4,7 +4,7 @@ import { createContext, useContext, useState, useEffect, useRef, useCallback, ty
 import { createClient } from "@/lib/supabase/client"
 import type { User as SupabaseUser } from "@supabase/supabase-js"
 
-type UserRole = "user" | "super_admin" | null
+type UserRole = "user" | "admin" | "super_admin" | null
 
 interface User {
   id: string
