@@ -19,6 +19,7 @@ export const clientes = pgTable("clientes", {
   correo: text("correo").notNull().unique(),
   celular: text("celular"),
   usuario: text("usuario").notNull().unique(),
+  passwordEncrypted: text("password_encrypted"),
   // Referencia al usuario de Supabase Auth si tiene cuenta
   authUserId: uuid("auth_user_id").references(() => profiles.id),
   activo: boolean("activo").default(true),
@@ -34,15 +35,27 @@ export const documentos = pgTable("documentos", {
     .references(() => clientes.id, { onDelete: "cascade" }),
   nombre: text("nombre").notNull(),
   descripcion: text("descripcion"),
-  // Ruta del archivo en Supabase Storage
   storagePath: text("storage_path").notNull(),
-  // Nombre original del archivo
   nombreArchivo: text("nombre_archivo").notNull(),
-  // Tamaño en bytes
   tamano: text("tamano"),
-  // Tipo MIME
   mimeType: text("mime_type"),
-  // Subido por (ID del admin que lo subió)
+  subidoPor: uuid("subido_por").references(() => profiles.id),
+})
+
+export const procesosJuridicos = pgTable("procesos_juridicos", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  clienteId: uuid("cliente_id")
+    .notNull()
+    .references(() => clientes.id, { onDelete: "cascade" }),
+  caso: text("caso").notNull(),
+  estado: text("estado").default("pendiente"),
+  nota: text("nota"),
+  storagePath: text("storage_path"),
+  nombreArchivo: text("nombre_archivo"),
+  tamano: text("tamano"),
+  mimeType: text("mime_type"),
   subidoPor: uuid("subido_por").references(() => profiles.id),
 })
 
@@ -55,3 +68,6 @@ export type NewCliente = typeof clientes.$inferInsert
 
 export type Documento = typeof documentos.$inferSelect
 export type NewDocumento = typeof documentos.$inferInsert
+
+export type ProcesoJuridico = typeof procesosJuridicos.$inferSelect
+export type NewProcesoJuridico = typeof procesosJuridicos.$inferInsert

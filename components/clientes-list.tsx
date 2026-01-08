@@ -5,14 +5,21 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
-import { Users, Search, UserPlus, FileText, Loader2 } from "lucide-react"
+import { Users, Search, UserPlus, Scale, Loader2, Eye, Copy, Check } from "lucide-react"
 import type { Cliente } from "@/lib/db/schema"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Label } from "@/components/ui/label"
 
 export function ClientesList() {
   const [searchTerm, setSearchTerm] = useState("")
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [showPasswordModal, setShowPasswordModal] = useState(false)
+  const [selectedCliente, setSelectedCliente] = useState<Cliente | null>(null)
+  const [password, setPassword] = useState<string | null>(null)
+  const [loadingPassword, setLoadingPassword] = useState(false)
+  const [copied, setCopied] = useState(false)
 
   useEffect(() => {
     async function fetchClientes() {
@@ -32,6 +39,41 @@ export function ClientesList() {
 
     fetchClientes()
   }, [])
+
+  const handleShowPassword = async (cliente: Cliente) => {
+    setSelectedCliente(cliente)
+    setShowPasswordModal(true)
+    setPassword(null)
+    setLoadingPassword(true)
+    setCopied(false)
+
+    try {
+      const response = await fetch(`/api/clientes/${cliente.id}/password`)
+      if (!response.ok) {
+        throw new Error("Error al obtener contraseña")
+      }
+      const data = await response.json()
+      setPassword(data.password)
+    } catch (err) {
+      setPassword(null)
+    } finally {
+      setLoadingPassword(false)
+    }
+  }
+
+  const handleCopyPassword = () => {
+    if (password) {
+      navigator.clipboard.writeText(password)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }
+  }
+
+  const handleCloseModal = () => {
+    setShowPasswordModal(false)
+    setPassword(null)
+    setSelectedCliente(null)
+  }
 
   const filteredClientes = clientes.filter((cliente) => cliente.nombre.toLowerCase().includes(searchTerm.toLowerCase()))
 
@@ -93,6 +135,15 @@ export function ClientesList() {
                     <p className="text-sm text-muted-foreground">{cliente.celular}</p>
                     <p className="text-xs text-muted-foreground/70">@{cliente.usuario}</p>
                   </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => handleShowPassword(cliente)}
+                    className="h-8 w-8 text-muted-foreground hover:text-accent"
+                    title="Ver contraseña"
+                  >
+                    <Eye className="h-4 w-4" />
+                  </Button>
                 </div>
                 <div className="mt-4 pt-4 border-t border-border">
                   <Button
@@ -100,9 +151,9 @@ export function ClientesList() {
                     variant="outline"
                     className="w-full border-accent text-accent hover:bg-accent hover:text-accent-foreground bg-transparent"
                   >
-                    <Link href={`/clientes/${cliente.id}/documentos`}>
-                      <FileText className="h-4 w-4 mr-2" />
-                      Documentos
+                    <Link href={`/clientes/${cliente.id}/procesos`}>
+                      <Scale className="h-4 w-4 mr-2" />
+                      Procesos Jurídicos
                     </Link>
                   </Button>
                 </div>
@@ -111,6 +162,46 @@ export function ClientesList() {
           ))
         )}
       </div>
+
+      <Dialog open={showPasswordModal} onOpenChange={handleCloseModal}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-primary">Contraseña del Cliente</DialogTitle>
+            <DialogDescription>
+              {selectedCliente?.nombre} - {selectedCliente?.correo}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            {loadingPassword ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-6 w-6 animate-spin text-primary" />
+              </div>
+            ) : password ? (
+              <>
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Contraseña</Label>
+                  <div className="p-3 bg-secondary rounded-lg font-mono text-sm select-all">{password}</div>
+                </div>
+                <Button onClick={handleCopyPassword} className="w-full bg-transparent" variant="outline">
+                  {copied ? (
+                    <>
+                      <Check className="h-4 w-4 mr-2" />
+                      Copiado
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-4 w-4 mr-2" />
+                      Copiar contraseña
+                    </>
+                  )}
+                </Button>
+              </>
+            ) : (
+              <div className="text-center py-4 text-muted-foreground">No se pudo obtener la contraseña</div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

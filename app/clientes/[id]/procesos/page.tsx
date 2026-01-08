@@ -1,74 +1,61 @@
 "use client"
 
 import type React from "react"
-
-import { useState } from "react"
-import { useParams } from "next/navigation"
+import { useState, useEffect, use } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ArrowLeft, Save, Edit, Trash2, Upload, FileText, Scale } from "lucide-react"
+import { ArrowLeft, Save, Edit, Trash2, Upload, FileText, Scale, Download, Loader2 } from "lucide-react"
 import Link from "next/link"
 import { Badge } from "@/components/ui/badge"
+import type { ProcesoJuridico, Cliente } from "@/lib/db/schema"
 
-interface Proceso {
-  id: string
-  caso: string
-  estado: "pendiente" | "en_proceso" | "resuelto" | "archivado"
-  nota: string
-  pdfUrl?: string
-  fecha: string
-}
-
-// Mock data for demonstration
-const mockProcesos: Proceso[] = [
-  {
-    id: "1",
-    caso: "Caso de revisión contractual",
-    estado: "en_proceso",
-    nota: "Se está revisando la documentación presentada por el cliente.",
-    pdfUrl: "/documents/caso-001.pdf",
-    fecha: "2024-01-15",
-  },
-  {
-    id: "2",
-    caso: "Consulta legal sobre normativa",
-    estado: "resuelto",
-    nota: "Consulta resuelta satisfactoriamente.",
-    pdfUrl: "/documents/caso-002.pdf",
-    fecha: "2024-01-10",
-  },
-]
-
-const mockCliente = {
-  id: "1",
-  nombre: "Juan Carlos Pérez",
-}
-
-const estadoConfig: Record<
-  Proceso["estado"],
-  { label: string; variant: "default" | "secondary" | "destructive" | "outline" }
-> = {
+const estadoConfig: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
   pendiente: { label: "Pendiente", variant: "secondary" },
   en_proceso: { label: "En proceso", variant: "default" },
   resuelto: { label: "Resuelto", variant: "outline" },
   archivado: { label: "Archivado", variant: "secondary" },
 }
 
-export default function ProcesosClientePage() {
-  const params = useParams()
-  const [procesos, setProcesos] = useState<Proceso[]>(mockProcesos)
+export default function ProcesosClientePage({ params }: { params: Promise<{ id: string }> }) {
+  const { id: clienteId } = use(params)
+  const [procesos, setProcesos] = useState<ProcesoJuridico[]>([])
+  const [cliente, setCliente] = useState<Cliente | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+  const [isLoadingData, setIsLoadingData] = useState(true)
   const [formData, setFormData] = useState({
     caso: "",
-    estado: "pendiente" as Proceso["estado"],
+    estado: "pendiente",
     nota: "",
     pdfFile: null as File | null,
   })
+
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        // Fetch cliente info
+        const clienteRes = await fetch(`/api/clientes`)
+        const clientes = await clienteRes.json()
+        const foundCliente = clientes.find((c: Cliente) => c.id === clienteId)
+        setCliente(foundCliente || null)
+
+        // Fetch procesos
+        const procesosRes = await fetch(`/api/procesos?clienteId=${clienteId}`)
+        const procesosData = await procesosRes.json()
+        setProcesos(procesosData)
+      } catch (error) {
+        console.error("Error fetching data:", error)
+      } finally {
+        setIsLoadingData(false)
+      }
+    }
+
+    fetchData()
+  }, [clienteId])
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target
@@ -85,44 +72,77 @@ export default function ProcesosClientePage() {
     e.preventDefault()
     setIsLoading(true)
 
-    await new Promise((resolve) => setTimeout(resolve, 500))
-
-    if (editingId) {
-      // Update existing proceso
-      setProcesos((prev) =>
-        prev.map((p) =>
-          p.id === editingId ? { ...p, caso: formData.caso, estado: formData.estado, nota: formData.nota } : p,
-        ),
-      )
-      setEditingId(null)
-    } else {
-      // Create new proceso
-      const newProceso: Proceso = {
-        id: Date.now().toString(),
-        caso: formData.caso,
-        estado: formData.estado,
-        nota: formData.nota,
-        fecha: new Date().toISOString().split("T")[0],
+    try {
+      const submitData = new FormData()
+      submitData.append("clienteId", clienteId)
+      submitData.append("caso", formData.caso)
+      submitData.append("estado", formData.estado)
+      submitData.append("nota", formData.nota)
+      if (formData.pdfFile) {
+        submitData.append("file", formData.pdfFile)
       }
-      setProcesos((prev) => [newProceso, ...prev])
-    }
 
-    setFormData({ caso: "", estado: "pendiente", nota: "", pdfFile: null })
-    setIsLoading(false)
+      const url = editingId ? `/api/procesos/${editingId}` : "/api/procesos"
+      const method = editingId ? "PUT" : "POST"
+
+      const response = await fetch(url, {
+        method,
+        body: submitData,
+      })
+
+      if (!response.ok) {
+        throw new Error("Error al guardar proceso")
+      }
+
+      // Refresh procesos
+      const procesosRes = await fetch(`/api/procesos?clienteId=${clienteId}`)
+      const procesosData = await procesosRes.json()
+      setProcesos(procesosData)
+
+      // Reset form
+      setEditingId(null)
+      setFormData({ caso: "", estado: "pendiente", nota: "", pdfFile: null })
+    } catch (error) {
+      console.error("Error saving proceso:", error)
+    } finally {
+      setIsLoading(false)
+    }
   }
 
-  const handleEdit = (proceso: Proceso) => {
+  const handleEdit = (proceso: ProcesoJuridico) => {
     setEditingId(proceso.id)
     setFormData({
       caso: proceso.caso,
-      estado: proceso.estado,
-      nota: proceso.nota,
+      estado: proceso.estado || "pendiente",
+      nota: proceso.nota || "",
       pdfFile: null,
     })
   }
 
-  const handleDelete = (id: string) => {
-    setProcesos((prev) => prev.filter((p) => p.id !== id))
+  const handleDelete = async (id: string) => {
+    if (!confirm("¿Estás seguro de eliminar este proceso?")) return
+
+    try {
+      const response = await fetch(`/api/procesos/${id}`, { method: "DELETE" })
+      if (response.ok) {
+        setProcesos((prev) => prev.filter((p) => p.id !== id))
+      }
+    } catch (error) {
+      console.error("Error deleting proceso:", error)
+    }
+  }
+
+  const handleDownload = async (procesoId: string) => {
+    try {
+      const response = await fetch(`/api/procesos/${procesoId}/download`)
+      const data = await response.json()
+
+      if (data.url) {
+        window.open(data.url, "_blank")
+      }
+    } catch (error) {
+      console.error("Error downloading:", error)
+    }
   }
 
   const handleCancelEdit = () => {
@@ -130,12 +150,21 @@ export default function ProcesosClientePage() {
     setFormData({ caso: "", estado: "pendiente", nota: "", pdfFile: null })
   }
 
-  const formatDate = (dateString: string) => {
+  const formatDate = (dateString: string | Date | null) => {
+    if (!dateString) return ""
     return new Date(dateString).toLocaleDateString("es-CO", {
       year: "numeric",
       month: "short",
       day: "numeric",
     })
+  }
+
+  if (isLoadingData) {
+    return (
+      <div className="container mx-auto px-4 py-8 flex items-center justify-center min-h-[400px]">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    )
   }
 
   return (
@@ -152,8 +181,8 @@ export default function ProcesosClientePage() {
             <Scale className="h-6 w-6 text-accent" />
           </div>
           <div>
-            <h1 className="text-3xl font-bold text-primary">Procesos del Cliente</h1>
-            <p className="text-muted-foreground">{mockCliente.nombre}</p>
+            <h1 className="text-3xl font-bold text-primary">Procesos Jurídicos</h1>
+            <p className="text-muted-foreground">{cliente?.nombre || "Cliente"}</p>
           </div>
         </div>
       </div>
@@ -185,7 +214,7 @@ export default function ProcesosClientePage() {
                 <Label htmlFor="estado">Estado</Label>
                 <Select
                   value={formData.estado}
-                  onValueChange={(value) => setFormData((prev) => ({ ...prev, estado: value as Proceso["estado"] }))}
+                  onValueChange={(value) => setFormData((prev) => ({ ...prev, estado: value }))}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Seleccionar estado" />
@@ -261,7 +290,7 @@ export default function ProcesosClientePage() {
                         <div className="flex items-center gap-2">
                           <h4 className="font-medium text-primary">{proceso.caso}</h4>
                           <Badge
-                            variant={estadoConfig[proceso.estado].variant}
+                            variant={estadoConfig[proceso.estado || "pendiente"]?.variant}
                             className={
                               proceso.estado === "en_proceso"
                                 ? "bg-accent text-accent-foreground"
@@ -270,13 +299,25 @@ export default function ProcesosClientePage() {
                                   : ""
                             }
                           >
-                            {estadoConfig[proceso.estado].label}
+                            {estadoConfig[proceso.estado || "pendiente"]?.label}
                           </Badge>
                         </div>
                         <p className="text-sm text-muted-foreground">{proceso.nota}</p>
-                        <p className="text-xs text-muted-foreground/70">{formatDate(proceso.fecha)}</p>
+                        <p className="text-xs text-muted-foreground/70">{formatDate(proceso.createdAt)}</p>
+                        {proceso.nombreArchivo && <p className="text-xs text-accent">{proceso.nombreArchivo}</p>}
                       </div>
                       <div className="flex gap-1 shrink-0">
+                        {proceso.storagePath && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleDownload(proceso.id)}
+                            className="h-8 w-8 text-muted-foreground hover:text-accent"
+                            title="Descargar PDF"
+                          >
+                            <Download className="h-4 w-4" />
+                          </Button>
+                        )}
                         <Button
                           variant="ghost"
                           size="icon"

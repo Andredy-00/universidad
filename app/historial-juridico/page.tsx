@@ -1,55 +1,18 @@
 "use client"
 
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
-import { Download, Scale } from "lucide-react"
+import { Download, Scale, Loader2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import { useAuth } from "@/context/auth-context"
+import type { ProcesoJuridico } from "@/lib/db/schema"
 
-interface HistorialJuridico {
-  id: string
-  fecha: string
-  estado: "pendiente" | "en_proceso" | "resuelto" | "archivado"
-  nombre: string
+interface ProcesoConCliente extends ProcesoJuridico {
+  clienteNombre?: string
 }
 
-// Mock data for demonstration
-const mockHistorial: HistorialJuridico[] = [
-  {
-    id: "1",
-    fecha: "2024-01-15",
-    estado: "resuelto",
-    nombre: "Caso administrativo #001",
-  },
-  {
-    id: "2",
-    fecha: "2024-01-20",
-    estado: "en_proceso",
-    nombre: "Revisión contractual #002",
-  },
-  {
-    id: "3",
-    fecha: "2024-02-01",
-    estado: "pendiente",
-    nombre: "Consulta legal #003",
-  },
-  {
-    id: "4",
-    fecha: "2024-02-10",
-    estado: "archivado",
-    nombre: "Documento legal #004",
-  },
-  {
-    id: "5",
-    fecha: "2024-02-15",
-    estado: "en_proceso",
-    nombre: "Proceso disciplinario #005",
-  },
-]
-
-const estadoConfig: Record<
-  HistorialJuridico["estado"],
-  { label: string; variant: "default" | "secondary" | "destructive" | "outline" }
-> = {
+const estadoConfig: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
   pendiente: { label: "Pendiente", variant: "secondary" },
   en_proceso: { label: "En proceso", variant: "default" },
   resuelto: { label: "Resuelto", variant: "outline" },
@@ -57,12 +20,43 @@ const estadoConfig: Record<
 }
 
 export default function HistorialJuridicoPage() {
-  const handleDownload = (nombre: string) => {
-    // Mock download - would trigger PDF download with Supabase storage
-    console.log(`Downloading PDF for ${nombre}`)
+  const { role } = useAuth()
+  const [procesos, setProcesos] = useState<ProcesoConCliente[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+
+  useEffect(() => {
+    async function fetchProcesos() {
+      try {
+        const response = await fetch("/api/procesos")
+        if (response.ok) {
+          const data = await response.json()
+          setProcesos(data)
+        }
+      } catch (error) {
+        console.error("Error fetching procesos:", error)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    fetchProcesos()
+  }, [])
+
+  const handleDownload = async (procesoId: string) => {
+    try {
+      const response = await fetch(`/api/procesos/${procesoId}/download`)
+      const data = await response.json()
+
+      if (data.url) {
+        window.open(data.url, "_blank")
+      }
+    } catch (error) {
+      console.error("Error downloading:", error)
+    }
   }
 
-  const formatDate = (dateString: string) => {
+  const formatDate = (dateString: string | Date | null) => {
+    if (!dateString) return ""
     return new Date(dateString).toLocaleDateString("es-CO", {
       year: "numeric",
       month: "long",
@@ -73,15 +67,25 @@ export default function HistorialJuridicoPage() {
   const columns = [
     {
       header: "Fecha",
-      accessorKey: (row: HistorialJuridico) => <span className="text-foreground">{formatDate(row.fecha)}</span>,
+      accessorKey: (row: ProcesoConCliente) => <span className="text-foreground">{formatDate(row.createdAt)}</span>,
     },
+    ...(role === "super_admin"
+      ? [
+          {
+            header: "Cliente",
+            accessorKey: (row: ProcesoConCliente) => (
+              <span className="text-foreground">{row.clienteNombre || "-"}</span>
+            ),
+          },
+        ]
+      : []),
     {
       header: "Estado",
-      accessorKey: (row: HistorialJuridico) => {
-        const config = estadoConfig[row.estado]
+      accessorKey: (row: ProcesoConCliente) => {
+        const config = estadoConfig[row.estado || "pendiente"]
         return (
           <Badge
-            variant={config.variant}
+            variant={config?.variant}
             className={
               row.estado === "en_proceso"
                 ? "bg-accent text-accent-foreground"
@@ -90,32 +94,43 @@ export default function HistorialJuridicoPage() {
                   : ""
             }
           >
-            {config.label}
+            {config?.label}
           </Badge>
         )
       },
     },
     {
-      header: "Nombre",
-      accessorKey: "nombre" as const,
+      header: "Caso",
+      accessorKey: "caso" as const,
       className: "font-medium",
     },
     {
       header: "Acción",
-      accessorKey: (row: HistorialJuridico) => (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => handleDownload(row.nombre)}
-          className="border-accent text-accent hover:bg-accent hover:text-accent-foreground"
-        >
-          <Download className="h-4 w-4 mr-2" />
-          Descargar PDF
-        </Button>
-      ),
+      accessorKey: (row: ProcesoConCliente) =>
+        row.storagePath ? (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => handleDownload(row.id)}
+            className="border-accent text-accent hover:bg-accent hover:text-accent-foreground"
+          >
+            <Download className="h-4 w-4 mr-2" />
+            Descargar PDF
+          </Button>
+        ) : (
+          <span className="text-muted-foreground text-sm">Sin archivo</span>
+        ),
       className: "text-right",
     },
   ]
+
+  if (isLoading) {
+    return (
+      <div className="container mx-auto px-4 py-8 flex items-center justify-center min-h-[400px]">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    )
+  }
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -126,10 +141,14 @@ export default function HistorialJuridicoPage() {
           </div>
           <h1 className="text-3xl font-bold text-primary">Historial Jurídico</h1>
         </div>
-        <p className="text-muted-foreground">Consulta y descarga los documentos del historial jurídico</p>
+        <p className="text-muted-foreground">
+          {role === "super_admin"
+            ? "Consulta todos los procesos jurídicos del sistema"
+            : "Consulta y descarga los documentos de tus procesos jurídicos"}
+        </p>
       </div>
 
-      <DataTable columns={columns} data={mockHistorial} emptyMessage="No hay registros en el historial jurídico" />
+      <DataTable columns={columns} data={procesos} emptyMessage="No hay registros en el historial jurídico" />
     </div>
   )
 }
