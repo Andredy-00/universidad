@@ -1,6 +1,6 @@
 "use client"
 
-import { createContext, useContext, useState, useEffect, useRef, type ReactNode } from "react"
+import { createContext, useContext, useState, useEffect, useRef, useCallback, type ReactNode } from "react"
 import { createClient } from "@/lib/supabase/client"
 import type { User as SupabaseUser } from "@supabase/supabase-js"
 
@@ -29,12 +29,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [supabaseUser, setSupabaseUser] = useState<SupabaseUser | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const isMountedRef = useRef(true)
+  const supabaseRef = useRef(createClient())
 
-  const supabase = createClient()
+  const fetchUserProfile = useCallback(async (authUser: SupabaseUser) => {
+    if (!isMountedRef.current) return
 
-  const fetchUserProfile = async (authUser: SupabaseUser) => {
     try {
-      const { data: profile, error } = await supabase.from("profiles").select("*").eq("id", authUser.id).single()
+      const { data: profile, error } = await supabaseRef.current
+        .from("profiles")
+        .select("*")
+        .eq("id", authUser.id)
+        .single()
 
       if (!isMountedRef.current) return
 
@@ -46,7 +51,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           role: profile.role as UserRole,
         })
       } else {
-        // Fallback if no profile exists yet or error occurred
         setUser({
           id: authUser.id,
           name: authUser.email?.split("@")[0] || "Usuario",
@@ -54,10 +58,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           role: "user",
         })
       }
-    } catch (err) {
+    } catch {
       if (!isMountedRef.current) return
-      console.error("Error fetching profile:", err)
-      // Set fallback user on error
       setUser({
         id: authUser.id,
         name: authUser.email?.split("@")[0] || "Usuario",
@@ -65,41 +67,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         role: "user",
       })
     }
-  }
+  }, [])
 
-  const refreshUser = async () => {
+  const refreshUser = useCallback(async () => {
+    if (!isMountedRef.current) return
     try {
       const {
         data: { user: authUser },
-      } = await supabase.auth.getUser()
+      } = await supabaseRef.current.auth.getUser()
       if (authUser && isMountedRef.current) {
         setSupabaseUser(authUser)
         await fetchUserProfile(authUser)
       }
-    } catch (err) {
-      if (!isMountedRef.current) return
-      console.error("Error refreshing user:", err)
+    } catch {
+      // Silently ignore abort errors
     }
-  }
+  }, [fetchUserProfile])
 
   useEffect(() => {
     isMountedRef.current = true
+    const supabase = supabaseRef.current
 
     const initAuth = async () => {
       try {
         const {
-          data: { user: authUser },
-        } = await supabase.auth.getUser()
+          data: { session },
+        } = await supabase.auth.getSession()
 
         if (!isMountedRef.current) return
 
-        if (authUser) {
-          setSupabaseUser(authUser)
-          await fetchUserProfile(authUser)
+        if (session?.user) {
+          setSupabaseUser(session.user)
+          await fetchUserProfile(session.user)
         }
-      } catch (err) {
-        if (!isMountedRef.current) return
-        console.error("Error initializing auth:", err)
+      } catch {
+        // Silently ignore errors on unmount
       } finally {
         if (isMountedRef.current) {
           setIsLoading(false)
@@ -127,19 +129,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isMountedRef.current = false
       subscription.unsubscribe()
     }
-  }, [])
+  }, [fetchUserProfile])
 
-  const logout = async () => {
+  const logout = useCallback(async () => {
     try {
-      await supabase.auth.signOut()
+      await supabaseRef.current.auth.signOut()
       if (isMountedRef.current) {
         setUser(null)
         setSupabaseUser(null)
       }
-    } catch (err) {
-      console.error("Error logging out:", err)
+    } catch {
+      // Ignore errors
     }
-  }
+  }, [])
 
   return (
     <AuthContext.Provider
