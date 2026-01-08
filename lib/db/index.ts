@@ -3,16 +3,18 @@ import postgres from "postgres"
 import * as schema from "./schema"
 
 // Singleton para la conexión
-let db: ReturnType<typeof drizzle<typeof schema>> | null = null
+let dbInstance: ReturnType<typeof drizzle<typeof schema>> | null = null
 
-export function getDb() {
-  if (db) return db
+function getDb() {
+  if (dbInstance) return dbInstance
 
   const connectionString = process.env.POSTGRES_URL!
   const client = postgres(connectionString, { prepare: false })
-  db = drizzle(client, { schema })
+  dbInstance = drizzle(client, { schema })
 
-  return db
+  return dbInstance
 }
 
-export { schema }
+export const db = getDb()
+
+export { schema, getDb }
