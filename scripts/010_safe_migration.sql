@@ -7,6 +7,9 @@ DROP POLICY IF EXISTS "profiles_select_own" ON profiles;
 DROP POLICY IF EXISTS "profiles_select_admin" ON profiles;
 DROP POLICY IF EXISTS "profiles_update_own" ON profiles;
 DROP POLICY IF EXISTS "profiles_insert" ON profiles;
+DROP POLICY IF EXISTS "profiles_select" ON profiles;
+DROP POLICY IF EXISTS "profiles_update" ON profiles;
+DROP POLICY IF EXISTS "profiles_delete" ON profiles;
 DROP POLICY IF EXISTS "Users can view own profile" ON profiles;
 DROP POLICY IF EXISTS "Users can update own profile" ON profiles;
 
@@ -35,30 +38,68 @@ EXCEPTION
   WHEN duplicate_object THEN null;
 END $$;
 
--- Paso 4: Migrar columna role a enum
--- Crear columna temporal con el nuevo tipo
-ALTER TABLE profiles ADD COLUMN IF NOT EXISTS role_enum user_role DEFAULT 'cliente';
+-- Paso 4: Migrar columna role a enum (solo si es text)
+DO $$ 
+BEGIN
+  -- Check if role column is text type
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'profiles' 
+    AND column_name = 'role' 
+    AND data_type = 'text'
+  ) THEN
+    -- Add temp column
+    ALTER TABLE profiles ADD COLUMN role_enum user_role DEFAULT 'cliente';
+    
+    -- Migrate data
+    UPDATE profiles SET role_enum = 
+      CASE 
+        WHEN role = 'super_admin' THEN 'super_admin'::user_role
+        WHEN role = 'admin' THEN 'admin'::user_role
+        ELSE 'cliente'::user_role
+      END;
+    
+    -- Drop old and rename new
+    ALTER TABLE profiles DROP COLUMN role;
+    ALTER TABLE profiles RENAME COLUMN role_enum TO role;
+  END IF;
+  
+  -- Ensure role column exists
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'profiles' AND column_name = 'role'
+  ) THEN
+    ALTER TABLE profiles ADD COLUMN role user_role DEFAULT 'cliente';
+  END IF;
+END $$;
 
--- Migrar datos existentes
-UPDATE profiles SET role_enum = 
-  CASE 
-    WHEN role::text = 'super_admin' THEN 'super_admin'::user_role
-    WHEN role::text = 'admin' THEN 'admin'::user_role
-    ELSE 'cliente'::user_role
-  END;
-
--- Eliminar columna vieja y renombrar nueva
-ALTER TABLE profiles DROP COLUMN IF EXISTS role CASCADE;
-ALTER TABLE profiles RENAME COLUMN role_enum TO role;
-
--- Paso 5: Añadir nuevas columnas a profiles
-ALTER TABLE profiles 
-ADD COLUMN IF NOT EXISTS celular TEXT,
-ADD COLUMN IF NOT EXISTS numero_identificacion TEXT,
-ADD COLUMN IF NOT EXISTS direccion TEXT,
-ADD COLUMN IF NOT EXISTS notas TEXT,
-ADD COLUMN IF NOT EXISTS activo BOOLEAN DEFAULT true NOT NULL,
-ADD COLUMN IF NOT EXISTS creado_por_id UUID REFERENCES profiles(id);
+-- Paso 5: Añadir nuevas columnas a profiles (una por una con verificación)
+DO $$ 
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'profiles' AND column_name = 'celular') THEN
+    ALTER TABLE profiles ADD COLUMN celular TEXT;
+  END IF;
+  
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'profiles' AND column_name = 'numero_identificacion') THEN
+    ALTER TABLE profiles ADD COLUMN numero_identificacion TEXT;
+  END IF;
+  
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'profiles' AND column_name = 'direccion') THEN
+    ALTER TABLE profiles ADD COLUMN direccion TEXT;
+  END IF;
+  
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'profiles' AND column_name = 'notas') THEN
+    ALTER TABLE profiles ADD COLUMN notas TEXT;
+  END IF;
+  
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'profiles' AND column_name = 'activo') THEN
+    ALTER TABLE profiles ADD COLUMN activo BOOLEAN DEFAULT true NOT NULL;
+  END IF;
+  
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'profiles' AND column_name = 'creado_por_id') THEN
+    ALTER TABLE profiles ADD COLUMN creado_por_id UUID REFERENCES profiles(id);
+  END IF;
+END $$;
 
 -- Paso 6: Crear funciones helper
 CREATE OR REPLACE FUNCTION get_user_role(user_id UUID)
@@ -136,7 +177,6 @@ CREATE POLICY "profiles_delete" ON profiles
 -- PROCESOS JURÍDICOS
 -- ============================================
 
--- Eliminar políticas existentes
 DROP POLICY IF EXISTS "procesos_select" ON procesos_juridicos;
 DROP POLICY IF EXISTS "procesos_insert" ON procesos_juridicos;
 DROP POLICY IF EXISTS "procesos_update" ON procesos_juridicos;
@@ -144,18 +184,49 @@ DROP POLICY IF EXISTS "procesos_delete" ON procesos_juridicos;
 DROP POLICY IF EXISTS "Users can view own procesos" ON procesos_juridicos;
 DROP POLICY IF EXISTS "Admins can manage procesos" ON procesos_juridicos;
 
--- Añadir nuevas columnas
-ALTER TABLE procesos_juridicos
-ADD COLUMN IF NOT EXISTS numero_proceso TEXT,
-ADD COLUMN IF NOT EXISTS descripcion TEXT,
-ADD COLUMN IF NOT EXISTS fecha_inicio TIMESTAMPTZ,
-ADD COLUMN IF NOT EXISTS fecha_audiencia TIMESTAMPTZ,
-ADD COLUMN IF NOT EXISTS fecha_cierre TIMESTAMPTZ,
-ADD COLUMN IF NOT EXISTS juzgado TEXT,
-ADD COLUMN IF NOT EXISTS ciudad TEXT,
-ADD COLUMN IF NOT EXISTS notas_internas TEXT,
-ADD COLUMN IF NOT EXISTS abogado_id UUID REFERENCES profiles(id),
-ADD COLUMN IF NOT EXISTS creado_por_id UUID REFERENCES profiles(id);
+-- Añadir columnas a procesos (una por una)
+DO $$ 
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'procesos_juridicos' AND column_name = 'numero_proceso') THEN
+    ALTER TABLE procesos_juridicos ADD COLUMN numero_proceso TEXT;
+  END IF;
+  
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'procesos_juridicos' AND column_name = 'descripcion') THEN
+    ALTER TABLE procesos_juridicos ADD COLUMN descripcion TEXT;
+  END IF;
+  
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'procesos_juridicos' AND column_name = 'fecha_inicio') THEN
+    ALTER TABLE procesos_juridicos ADD COLUMN fecha_inicio TIMESTAMPTZ;
+  END IF;
+  
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'procesos_juridicos' AND column_name = 'fecha_audiencia') THEN
+    ALTER TABLE procesos_juridicos ADD COLUMN fecha_audiencia TIMESTAMPTZ;
+  END IF;
+  
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'procesos_juridicos' AND column_name = 'fecha_cierre') THEN
+    ALTER TABLE procesos_juridicos ADD COLUMN fecha_cierre TIMESTAMPTZ;
+  END IF;
+  
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'procesos_juridicos' AND column_name = 'juzgado') THEN
+    ALTER TABLE procesos_juridicos ADD COLUMN juzgado TEXT;
+  END IF;
+  
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'procesos_juridicos' AND column_name = 'ciudad') THEN
+    ALTER TABLE procesos_juridicos ADD COLUMN ciudad TEXT;
+  END IF;
+  
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'procesos_juridicos' AND column_name = 'notas_internas') THEN
+    ALTER TABLE procesos_juridicos ADD COLUMN notas_internas TEXT;
+  END IF;
+  
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'procesos_juridicos' AND column_name = 'abogado_id') THEN
+    ALTER TABLE procesos_juridicos ADD COLUMN abogado_id UUID REFERENCES profiles(id);
+  END IF;
+  
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'procesos_juridicos' AND column_name = 'creado_por_id') THEN
+    ALTER TABLE procesos_juridicos ADD COLUMN creado_por_id UUID REFERENCES profiles(id);
+  END IF;
+END $$;
 
 -- Migrar estado a enum si es text
 DO $$ 
@@ -183,14 +254,28 @@ BEGIN
   END IF;
 END $$;
 
--- Eliminar columnas obsoletas
-ALTER TABLE procesos_juridicos 
-DROP COLUMN IF EXISTS storage_path CASCADE,
-DROP COLUMN IF EXISTS nombre_archivo CASCADE,
-DROP COLUMN IF EXISTS tamano CASCADE,
-DROP COLUMN IF EXISTS mime_type CASCADE,
-DROP COLUMN IF EXISTS nota CASCADE,
-DROP COLUMN IF EXISTS subido_por CASCADE;
+-- Eliminar columnas obsoletas de procesos
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'procesos_juridicos' AND column_name = 'storage_path') THEN
+    ALTER TABLE procesos_juridicos DROP COLUMN storage_path;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'procesos_juridicos' AND column_name = 'nombre_archivo') THEN
+    ALTER TABLE procesos_juridicos DROP COLUMN nombre_archivo;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'procesos_juridicos' AND column_name = 'tamano') THEN
+    ALTER TABLE procesos_juridicos DROP COLUMN tamano;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'procesos_juridicos' AND column_name = 'mime_type') THEN
+    ALTER TABLE procesos_juridicos DROP COLUMN mime_type;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'procesos_juridicos' AND column_name = 'nota') THEN
+    ALTER TABLE procesos_juridicos DROP COLUMN nota;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'procesos_juridicos' AND column_name = 'subido_por') THEN
+    ALTER TABLE procesos_juridicos DROP COLUMN subido_por;
+  END IF;
+END $$;
 
 ALTER TABLE procesos_juridicos ENABLE ROW LEVEL SECURITY;
 
@@ -228,21 +313,43 @@ DROP POLICY IF EXISTS "documentos_delete" ON documentos;
 DROP POLICY IF EXISTS "Users can view own documents" ON documentos;
 DROP POLICY IF EXISTS "Admins can manage documents" ON documentos;
 
-ALTER TABLE documentos 
-ADD COLUMN IF NOT EXISTS proceso_id UUID REFERENCES procesos_juridicos(id) ON DELETE CASCADE,
-ADD COLUMN IF NOT EXISTS tipo documento_tipo DEFAULT 'otro',
-ADD COLUMN IF NOT EXISTS version INTEGER DEFAULT 1,
-ADD COLUMN IF NOT EXISTS es_version_actual BOOLEAN DEFAULT true,
-ADD COLUMN IF NOT EXISTS visible_para_cliente BOOLEAN DEFAULT true,
-ADD COLUMN IF NOT EXISTS subido_por_id UUID REFERENCES profiles(id),
-ADD COLUMN IF NOT EXISTS tamano_bytes INTEGER;
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'documentos' AND column_name = 'proceso_id') THEN
+    ALTER TABLE documentos ADD COLUMN proceso_id UUID REFERENCES procesos_juridicos(id) ON DELETE CASCADE;
+  END IF;
+  
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'documentos' AND column_name = 'tipo') THEN
+    ALTER TABLE documentos ADD COLUMN tipo documento_tipo DEFAULT 'otro';
+  END IF;
+  
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'documentos' AND column_name = 'version') THEN
+    ALTER TABLE documentos ADD COLUMN version INTEGER DEFAULT 1;
+  END IF;
+  
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'documentos' AND column_name = 'es_version_actual') THEN
+    ALTER TABLE documentos ADD COLUMN es_version_actual BOOLEAN DEFAULT true;
+  END IF;
+  
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'documentos' AND column_name = 'visible_para_cliente') THEN
+    ALTER TABLE documentos ADD COLUMN visible_para_cliente BOOLEAN DEFAULT true;
+  END IF;
+  
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'documentos' AND column_name = 'subido_por_id') THEN
+    ALTER TABLE documentos ADD COLUMN subido_por_id UUID REFERENCES profiles(id);
+  END IF;
+  
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'documentos' AND column_name = 'tamano_bytes') THEN
+    ALTER TABLE documentos ADD COLUMN tamano_bytes INTEGER;
+  END IF;
+END $$;
 
 -- Migrar subido_por si existe
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'documentos' AND column_name = 'subido_por') THEN
-    UPDATE documentos SET subido_por_id = subido_por WHERE subido_por_id IS NULL;
-    ALTER TABLE documentos DROP COLUMN subido_por CASCADE;
+    UPDATE documentos SET subido_por_id = subido_por WHERE subido_por_id IS NULL AND subido_por IS NOT NULL;
+    ALTER TABLE documentos DROP COLUMN subido_por;
   END IF;
 END $$;
 
